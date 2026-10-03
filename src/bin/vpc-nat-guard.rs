@@ -131,7 +131,12 @@ async fn install(bin: &str, protected: &BTreeSet<String>) -> Result<()> {
     // Atomic restore replaces only our chain. Existing node, kube-router and
     // EgressGateway chains and policies are preserved.
     let restore = format!("{bin}-restore");
-    let input = "*mangle\n:HC-VPC-GUARD - [0:0]\n-F HC-VPC-GUARD\n-A HC-VPC-GUARD -m set ! --match-set HC-VPC-MANAGED src -j RETURN\n-A HC-VPC-GUARD -m set --match-set HC-VPC-PRIVATE dst -j RETURN\n-A HC-VPC-GUARD -m conntrack --ctdir REPLY -j RETURN\n-A HC-VPC-GUARD -o egress.vxlan -j RETURN\n-A HC-VPC-GUARD -m set --match-set HC-VPC-LOCAL src -j RETURN\n-A HC-VPC-GUARD -j DROP\nCOMMIT\n";
+    // kube-router adds its policy-accepted mark in filter/FORWARD. That makes
+    // EgressGateway's exact-mark NAT exemption miss, so Flannel would masquerade
+    // the Pod before it enters the tunnel. Match our managed sources and the
+    // selected tunnel interface instead; the remote gateway must see the Pod IP.
+    // This NAT-table exemption runs after NetworkPolicy and the mangle guard.
+    let input = "*mangle\n:HC-VPC-GUARD - [0:0]\n-F HC-VPC-GUARD\n-A HC-VPC-GUARD -m set ! --match-set HC-VPC-MANAGED src -j RETURN\n-A HC-VPC-GUARD -m set --match-set HC-VPC-PRIVATE dst -j RETURN\n-A HC-VPC-GUARD -m conntrack --ctdir REPLY -j RETURN\n-A HC-VPC-GUARD -o egress.vxlan -j RETURN\n-A HC-VPC-GUARD -m set --match-set HC-VPC-LOCAL src -j RETURN\n-A HC-VPC-GUARD -j DROP\nCOMMIT\n*nat\n:HC-VPC-NAT - [0:0]\n-F HC-VPC-NAT\n-A HC-VPC-NAT -o egress.vxlan -m set --match-set HC-VPC-MANAGED src -j ACCEPT\nCOMMIT\n";
     use tokio::io::AsyncWriteExt;
     let mut child = Command::new(&restore)
         .args(["--noflush", "--wait", "5"])
@@ -151,35 +156,17 @@ async fn install(bin: &str, protected: &BTreeSet<String>) -> Result<()> {
         "iptables restore: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let exists = Command::new(bin)
-        .args([
-            "-w",
-            "5",
-            "-t",
-            "mangle",
-            "-C",
-            "FORWARD",
-            "-j",
-            "HC-VPC-GUARD",
-        ])
-        .output()
-        .await?;
-    if !exists.status.success() {
-        command(
-            bin,
-            &[
-                "-w",
-                "5",
-                "-t",
-                "mangle",
-                "-I",
-                "FORWARD",
-                "1",
-                "-j",
-                "HC-VPC-GUARD",
-            ],
-        )
-        .await?;
+    for (table, hook, chain) in [
+        ("mangle", "FORWARD", "HC-VPC-GUARD"),
+        ("nat", "POSTROUTING", "HC-VPC-NAT"),
+    ] {
+        let exists = Command::new(bin)
+            .args(["-w", "5", "-t", table, "-C", hook, "-j", chain])
+            .output()
+            .await?;
+        if !exists.status.success() {
+            command(bin, &["-w", "5", "-t", table, "-I", hook, "1", "-j", chain]).await?;
+        }
     }
     Ok(())
 }

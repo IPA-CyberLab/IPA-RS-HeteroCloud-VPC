@@ -123,6 +123,66 @@ async fn kernel_drops_fallback_and_expires_local_gateway_permits() -> Result<()>
         );
         command("ip", &["link", "set", "outbound", "name", "egress.vxlan"]).await?;
         ensure!(probe().await?, "selected tunnel path must pass");
+        // Reproduce kube-router's policy mark and Flannel's catch-all SNAT.
+        // The gateway only accepts the original Pod source, never a tunnel IP.
+        command(
+            "iptables-nft",
+            &[
+                "-t",
+                "filter",
+                "-A",
+                "FORWARD",
+                "-j",
+                "MARK",
+                "--set-xmark",
+                "0x20000/0x20000",
+            ],
+        )
+        .await?;
+        command(
+            "iptables-nft",
+            &[
+                "-t",
+                "nat",
+                "-A",
+                "POSTROUTING",
+                "-s",
+                "10.66.0.0/24",
+                "-j",
+                "MASQUERADE",
+            ],
+        )
+        .await?;
+        command(
+            "ip",
+            &[
+                "netns",
+                "exec",
+                &server,
+                "iptables-nft",
+                "-A",
+                "INPUT",
+                "-p",
+                "icmp",
+                "!",
+                "-s",
+                "10.66.0.2",
+                "-j",
+                "DROP",
+            ],
+        )
+        .await?;
+        ensure!(
+            probe().await?,
+            "tunnel must preserve the Pod source despite CNI marks and masquerade"
+        );
+        set("HC-VPC-MANAGED", "hash:ip", &BTreeSet::new()).await?;
+        ensure!(
+            !probe().await?,
+            "unmanaged traffic must retain normal CNI masquerade"
+        );
+        set("HC-VPC-MANAGED", "hash:ip", &ips).await?;
+        ensure!(probe().await?, "managed source exemption must recover");
         // Restarting must not erase the managed set and permit fallback.
         command("ip", &["link", "set", "egress.vxlan", "name", "outbound"]).await?;
         install("iptables-nft", &BTreeSet::from(["10.0.0.0/8".into()])).await?;
