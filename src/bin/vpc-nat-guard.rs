@@ -128,6 +128,21 @@ async fn install(bin: &str, protected: &BTreeSet<String>) -> Result<()> {
     .await?;
     set("HC-VPC-LOCAL", "hash:ip", &BTreeSet::new()).await?;
     set("HC-VPC-PRIVATE", "hash:net", protected).await?;
+    let hook_exists = Command::new(bin)
+        .args([
+            "-w",
+            "5",
+            "-t",
+            "mangle",
+            "-C",
+            "FORWARD",
+            "-j",
+            "HC-VPC-GUARD",
+        ])
+        .output()
+        .await?
+        .status
+        .success();
     // Atomic restore replaces only our chain. Existing node, kube-router and
     // EgressGateway chains and policies are preserved.
     let restore = format!("{bin}-restore");
@@ -136,7 +151,19 @@ async fn install(bin: &str, protected: &BTreeSet<String>) -> Result<()> {
     // the Pod before it enters the tunnel. Match our managed sources and the
     // selected tunnel interface instead; the remote gateway must see the Pod IP.
     // This NAT-table exemption runs after NetworkPolicy and the mangle guard.
-    let input = "*mangle\n:HC-VPC-GUARD - [0:0]\n-F HC-VPC-GUARD\n-A HC-VPC-GUARD -m set ! --match-set HC-VPC-MANAGED src -j RETURN\n-A HC-VPC-GUARD -m set --match-set HC-VPC-PRIVATE dst -j RETURN\n-A HC-VPC-GUARD -m conntrack --ctdir REPLY -j RETURN\n-A HC-VPC-GUARD -o egress.vxlan -j RETURN\n-A HC-VPC-GUARD -m set --match-set HC-VPC-LOCAL src -j RETURN\n-A HC-VPC-GUARD -j DROP\nCOMMIT\n*nat\n:HC-VPC-NAT - [0:0]\n-F HC-VPC-NAT\n-A HC-VPC-NAT -o egress.vxlan -m set --match-set HC-VPC-MANAGED src -j ACCEPT\nCOMMIT\n";
+    // EgressGateway prepends its mark normalization to mangle/FORWARD and
+    // exact-mark ACCEPT to filter/FORWARD. Reserve bit 0 after normalization so
+    // its ACCEPT cannot skip the CNI's workload policies, even during restarts.
+    // Routing has already selected the tunnel in PREROUTING; this bit is not a
+    // kube-router permit bit. Atomically move our hook to the end when upgrading.
+    let remove_hook = if hook_exists {
+        "-D FORWARD -j HC-VPC-GUARD\n"
+    } else {
+        ""
+    };
+    let input = format!(
+        "*mangle\n:HC-VPC-GUARD - [0:0]\n-F HC-VPC-GUARD\n-A HC-VPC-GUARD -m set ! --match-set HC-VPC-MANAGED src -j RETURN\n-A HC-VPC-GUARD -j MARK --set-xmark 0x1/0x1\n-A HC-VPC-GUARD -m set --match-set HC-VPC-PRIVATE dst -j RETURN\n-A HC-VPC-GUARD -m conntrack --ctdir REPLY -j RETURN\n-A HC-VPC-GUARD -o egress.vxlan -j RETURN\n-A HC-VPC-GUARD -m set --match-set HC-VPC-LOCAL src -j RETURN\n-A HC-VPC-GUARD -j DROP\n{remove_hook}-A FORWARD -j HC-VPC-GUARD\nCOMMIT\n*nat\n:HC-VPC-NAT - [0:0]\n-F HC-VPC-NAT\n-A HC-VPC-NAT -o egress.vxlan -m set --match-set HC-VPC-MANAGED src -j ACCEPT\nCOMMIT\n"
+    );
     use tokio::io::AsyncWriteExt;
     let mut child = Command::new(&restore)
         .args(["--noflush", "--wait", "5"])
@@ -156,10 +183,7 @@ async fn install(bin: &str, protected: &BTreeSet<String>) -> Result<()> {
         "iptables restore: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for (table, hook, chain) in [
-        ("mangle", "FORWARD", "HC-VPC-GUARD"),
-        ("nat", "POSTROUTING", "HC-VPC-NAT"),
-    ] {
+    for (table, hook, chain) in [("nat", "POSTROUTING", "HC-VPC-NAT")] {
         let exists = Command::new(bin)
             .args(["-w", "5", "-t", table, "-C", hook, "-j", chain])
             .output()

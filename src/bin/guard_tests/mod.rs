@@ -123,6 +123,73 @@ async fn kernel_drops_fallback_and_expires_local_gateway_permits() -> Result<()>
         );
         command("ip", &["link", "set", "outbound", "name", "egress.vxlan"]).await?;
         ensure!(probe().await?, "selected tunnel path must pass");
+        // Gateway restarts can place its exact-mark ACCEPT before the CNI.
+        // A managed workload must still traverse the CNI's deny decision.
+        command(
+            "iptables-nft",
+            &[
+                "-t",
+                "mangle",
+                "-I",
+                "FORWARD",
+                "1",
+                "-j",
+                "MARK",
+                "--set-xmark",
+                "0x26000000/0xffffffff",
+            ],
+        )
+        .await?;
+        command(
+            "iptables-nft",
+            &[
+                "-t",
+                "filter",
+                "-I",
+                "FORWARD",
+                "1",
+                "-m",
+                "mark",
+                "--mark",
+                "0x26000000",
+                "-j",
+                "ACCEPT",
+            ],
+        )
+        .await?;
+        command(
+            "iptables-nft",
+            &[
+                "-t",
+                "filter",
+                "-A",
+                "FORWARD",
+                "-s",
+                "10.66.0.2",
+                "-j",
+                "DROP",
+            ],
+        )
+        .await?;
+        ensure!(
+            !probe().await?,
+            "gateway rule order must not bypass workload egress policy"
+        );
+        command(
+            "iptables-nft",
+            &[
+                "-t",
+                "filter",
+                "-D",
+                "FORWARD",
+                "-s",
+                "10.66.0.2",
+                "-j",
+                "DROP",
+            ],
+        )
+        .await?;
+        ensure!(probe().await?, "permitted tunnel traffic must recover");
         // Reproduce kube-router's policy mark and Flannel's catch-all SNAT.
         // The gateway only accepts the original Pod source, never a tunnel IP.
         command(

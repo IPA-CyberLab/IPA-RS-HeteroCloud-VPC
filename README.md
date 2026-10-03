@@ -64,7 +64,7 @@ IAMアクションは `vpc:ListNetworks`、`vpc:CreateNetwork`、`vpc:GetNetwork
 
 コントローラーは `VpcNetwork` と `FlashService` からNetworkPolicy、内部Service / DNS、EgressGateway / EgressPolicyを生成します。FlannelのPodアドレスは変更せず、VPCの分離をNetworkPolicyで実現します。独自CIDRや重複CIDR、IPv6 NATを提供する実装ではありません。
 
-kube-routerのポリシー用マークとFlannelのmasqueradeが併存する環境では、guardが管理するPodからEgressGatewayトンネルへ出るパケットの送信元IPを保持します。NetworkPolicyは先に評価され、実際のSNATは選択された出口ノードで行われます。この条件はCIの隔離されたLinuxネットワーク名前空間でも検証します。
+kube-routerのポリシー用マークとFlannelのmasqueradeが併存する環境では、guardが管理するPodからEgressGatewayトンネルへ出るパケットの送信元IPを保持します。NetworkPolicyは先に評価され、実際のSNATは選択された出口ノードで行われます。また、NAT側のルール順序が変わってもコンテナの送信制限を通過するよう、mangle/FORWARDでマークのbit 0を使用します。このbitを他用途へ割り当てないでください。これらの条件はCIの隔離されたLinuxネットワーク名前空間でも検証します。
 
 NATは [EgressGateway v0.6.9](https://github.com/spidernet-io/egressgateway/tree/v0.6.9) のIPv4 / iptablesデータプレーンを使用します。ゲートウェイ間のトンネルはHeteroNetインターフェースを使用します。ノードの外向きアドレスでSNATするため、専用固定EIPではなく、ゲートウェイ切り替え時に送信元IPや既存接続が変わる場合があります。
 
