@@ -1,0 +1,61 @@
+name: VPC CI and release
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: {toolchain: 1.96.1, components: "rustfmt,clippy"}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo test --all-targets --locked
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo run --locked --bin vpc-crdgen > /tmp/vpc.yaml && cmp /tmp/vpc.yaml deploy/helm/heterocloud-vpc/crds/vpcnetworks.yaml
+      - uses: azure/setup-helm@v5
+      - run: helm lint --strict deploy/helm/heterocloud-vpc
+      - run: helm template heterocloud-vpc deploy/helm/heterocloud-vpc --include-crds > /tmp/vpc-chart.yaml
+  image:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
+    permissions: {contents: read, packages: write}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}"}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/ipa-cyberlab/ipa-rs-heterocloud-vpc:${{ github.ref_name }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+  manifest:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: image
+    runs-on: ubuntu-24.04
+    permissions: {contents: read, packages: write}
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}"}
+      - run: |
+          docker buildx imagetools create -t "ghcr.io/ipa-cyberlab/ipa-rs-heterocloud-vpc:${REF#v}" \
+            "ghcr.io/ipa-cyberlab/ipa-rs-heterocloud-vpc:${REF}-amd64" \
+            "ghcr.io/ipa-cyberlab/ipa-rs-heterocloud-vpc:${REF}-arm64"
+        env: {REF: "${{ github.ref_name }}"}

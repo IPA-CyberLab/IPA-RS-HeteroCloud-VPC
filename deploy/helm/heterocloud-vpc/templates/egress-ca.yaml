@@ -1,0 +1,43 @@
+{{- if .Values.egressCertificate.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.egressCertificate.namespace }}
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: heterocloud-vpc-egress-selfsigned
+  namespace: {{ .Values.egressCertificate.namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: heterocloud-vpc-egress-ca
+  namespace: {{ .Values.egressCertificate.namespace }}
+spec:
+  isCA: true
+  commonName: HeteroCloud VPC egress admission CA
+  secretName: heterocloud-vpc-egress-ca
+  duration: 87600h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: heterocloud-vpc-egress-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: heterocloud-vpc-egress-ca
+  namespace: {{ .Values.egressCertificate.namespace }}
+spec:
+  ca:
+    secretName: heterocloud-vpc-egress-ca
+{{- end }}

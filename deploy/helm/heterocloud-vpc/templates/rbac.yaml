@@ -1,0 +1,103 @@
+{{- range $component := list "api" "controller" "guard" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: heterocloud-vpc-{{ $component }}
+  namespace: {{ $.Release.Namespace }}
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: heterocloud-vpc-api}
+rules:
+  - apiGroups: [vpc.heterocloud.io]
+    resources: [vpcnetworks]
+    verbs: [get, list, create, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: heterocloud-vpc-controller}
+rules:
+  - apiGroups: [vpc.heterocloud.io]
+    resources: [vpcnetworks]
+    verbs: [get, list, watch, patch]
+  - apiGroups: [vpc.heterocloud.io]
+    resources: [vpcnetworks/finalizers]
+    verbs: [update, patch]
+  - apiGroups: [vpc.heterocloud.io]
+    resources: [vpcnetworks/status]
+    verbs: [patch, update]
+  - apiGroups: [""]
+    resources: [namespaces, services]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [egressgateway.spidernet.io]
+    resources: [egressgateways]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: heterocloud-vpc-guard}
+rules:
+  - apiGroups: [vpc.heterocloud.io]
+    resources: [vpcnetworks]
+    verbs: [get, list, watch]
+  - apiGroups: [egressgateway.spidernet.io]
+    resources: [egresstunnels]
+    verbs: [get, list, watch]
+---
+{{- range $component := list "api" "controller" "guard" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: heterocloud-vpc-{{ $component }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: heterocloud-vpc-{{ $component }}
+subjects:
+  - kind: ServiceAccount
+    name: heterocloud-vpc-{{ $component }}
+    namespace: {{ $.Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: heterocloud-vpc-{{ $component }}
+  namespace: {{ $.Values.flashNamespace }}
+rules:
+  {{- if eq $component "guard" }}
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, patch]
+  - apiGroups: [egressgateway.spidernet.io]
+    resources: [egresspolicies]
+    verbs: [get, list, watch]
+  {{- else }}
+  - apiGroups: [flash.heterocloud.io]
+    resources: [flashservices]
+    verbs: [get, list, watch{{ if eq $component "controller" }}, patch{{ end }}]
+  {{- if eq $component "controller" }}
+  - apiGroups: [egressgateway.spidernet.io]
+    resources: [egresspolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  {{- end }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: heterocloud-vpc-{{ $component }}
+  namespace: {{ $.Values.flashNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: heterocloud-vpc-{{ $component }}
+subjects:
+  - kind: ServiceAccount
+    name: heterocloud-vpc-{{ $component }}
+    namespace: {{ $.Release.Namespace }}
+---
+{{- end }}

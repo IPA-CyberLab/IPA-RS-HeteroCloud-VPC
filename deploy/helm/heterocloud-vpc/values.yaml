@@ -1,0 +1,42 @@
+image: ghcr.io/ipa-cyberlab/ipa-rs-heterocloud-vpc:0.1.0
+controlPlaneNamespace: heterocloud
+flashNamespace: heterocloud-flash-workloads
+clusterDomain: cluster.local
+providerIssuer: heterocloud
+# Verification keys only; provider signing keys never enter this service.
+providerPublicKeysJson: "{}"
+apiReplicas: 2
+protectedCidrs: []
+gatewaySelector:
+  matchLabels:
+    vpc.heterocloud.io/gateway: "true"
+nodeAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: kubernetes.io/os
+            operator: In
+            values: [linux]
+          - key: heteronetwork.io/control-plane-only
+            operator: NotIn
+            values: ["true"]
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+guard:
+  enabled: true
+  iptablesBin: iptables-nft
+  resources:
+    requests: {cpu: 30m, memory: 64Mi}
+    limits: {cpu: 300m, memory: 192Mi}
+apiResources:
+  requests: {cpu: 30m, memory: 64Mi}
+  limits: {cpu: 500m, memory: 256Mi}
+controllerResources:
+  requests: {cpu: 30m, memory: 64Mi}
+  limits: {cpu: 500m, memory: 256Mi}
+
+egressCertificate:
+  enabled: false
+  namespace: heterocloud-vpc-system

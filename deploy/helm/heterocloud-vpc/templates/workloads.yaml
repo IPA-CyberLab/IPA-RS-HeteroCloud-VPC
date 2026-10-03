@@ -1,0 +1,78 @@
+{{- range $component := list "api" "controller" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heterocloud-vpc-{{ $component }}
+spec:
+  replicas: {{ if eq $component "api" }}{{ $.Values.apiReplicas }}{{ else }}1{{ end }}
+  {{- if eq $component "controller" }}
+  strategy: {type: Recreate}
+  {{- end }}
+  selector:
+    matchLabels: {app: heterocloud-vpc, component: {{ $component }}}
+  template:
+    metadata:
+      labels: {app: heterocloud-vpc, component: {{ $component }}}
+    spec:
+      serviceAccountName: heterocloud-vpc-{{ $component }}
+      securityContext: {runAsUser: 65532, runAsGroup: 65532, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      affinity:
+        nodeAffinity: {{ $.Values.nodeAffinity | toJson }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {app: heterocloud-vpc, component: {{ $component }}}
+      tolerations: {{ $.Values.tolerations | toJson }}
+      containers:
+        - name: {{ $component }}
+          image: {{ $.Values.image | quote }}
+          command: ["/usr/local/bin/vpc-{{ $component }}"]
+          env:
+            - {name: FLASH_NAMESPACE, value: {{ $.Values.flashNamespace | quote }}}
+            - {name: CLUSTER_DOMAIN, value: {{ $.Values.clusterDomain | quote }}}
+            - {name: HETEROCLOUD_PROVIDER_ISSUER, value: {{ $.Values.providerIssuer | quote }}}
+            - {name: HETEROCLOUD_PROVIDER_PUBLIC_KEYS_JSON, value: {{ $.Values.providerPublicKeysJson | quote }}}
+            - {name: VPC_GATEWAY_SELECTOR_JSON, value: {{ $.Values.gatewaySelector | toJson | quote }}}
+            - {name: VPC_PROTECTED_CIDRS, value: {{ join "," $.Values.protectedCidrs | quote }}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          {{- if eq $component "api" }}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10}
+          resources: {{ $.Values.apiResources | toJson }}
+          {{- else }}
+          resources: {{ $.Values.controllerResources | toJson }}
+          {{- end }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata: {name: heterocloud-vpc-api}
+spec:
+  selector: {app: heterocloud-vpc, component: api}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: heterocloud-vpc-api}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: heterocloud-vpc, component: api}}
+---
+# Signed provider calls are reachable only from the HeteroCloud control plane.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: heterocloud-vpc-api}
+spec:
+  podSelector: {matchLabels: {app: heterocloud-vpc, component: api}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Values.controlPlaneNamespace | quote }}}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: heterocloud}
+      ports: [{port: 8080, protocol: TCP}]

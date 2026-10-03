@@ -1,0 +1,217 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vpcnetworks.vpc.heterocloud.io
+spec:
+  group: vpc.heterocloud.io
+  names:
+    categories: []
+    kind: VpcNetwork
+    plural: vpcnetworks
+    shortNames:
+    - vpc
+    singular: vpcnetwork
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for VpcNetworkSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              desired_generation:
+                format: int64
+                type: integer
+              display_name:
+                type: string
+              network:
+                properties:
+                  description:
+                    default: ''
+                    type: string
+                  nat:
+                    default:
+                      enabled: false
+                    properties:
+                      enabled:
+                        default: false
+                        type: boolean
+                    type: object
+                  region:
+                    type: string
+                  rules:
+                    default: []
+                    items:
+                      properties:
+                        description:
+                          default: ''
+                          type: string
+                        destination:
+                          properties:
+                            name:
+                              nullable: true
+                              type: string
+                            service_id:
+                              format: uuid
+                              nullable: true
+                              type: string
+                            type:
+                              enum:
+                              - security_group
+                              - service
+                              - all
+                              type: string
+                          required:
+                          - type
+                          type: object
+                          x-kubernetes-validations:
+                          - message: peer fields must match its type
+                            rule: 'self.type == ''security_group'' ? (has(self.name) && !has(self.service_id)) : (self.type == ''service'' ? (has(self.service_id) && !has(self.name)) : (!has(self.name) && !has(self.service_id)))'
+                        end_port:
+                          format: uint16
+                          maximum: 65535.0
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        port:
+                          format: uint16
+                          maximum: 65535.0
+                          minimum: 0.0
+                          type: integer
+                        protocol:
+                          enum:
+                          - tcp
+                          - udp
+                          type: string
+                        source:
+                          properties:
+                            name:
+                              nullable: true
+                              type: string
+                            service_id:
+                              format: uuid
+                              nullable: true
+                              type: string
+                            type:
+                              enum:
+                              - security_group
+                              - service
+                              - all
+                              type: string
+                          required:
+                          - type
+                          type: object
+                          x-kubernetes-validations:
+                          - message: peer fields must match its type
+                            rule: 'self.type == ''security_group'' ? (has(self.name) && !has(self.service_id)) : (self.type == ''service'' ? (has(self.service_id) && !has(self.name)) : (!has(self.name) && !has(self.service_id)))'
+                      required:
+                      - destination
+                      - port
+                      - protocol
+                      - source
+                      type: object
+                    type: array
+                  security_groups:
+                    default:
+                    - default
+                    items:
+                      type: string
+                    type: array
+                required:
+                - region
+                type: object
+              organization_id:
+                format: uuid
+                type: string
+              project_id:
+                format: uuid
+                type: string
+              service_instance_id:
+                format: uuid
+                type: string
+            required:
+            - desired_generation
+            - display_name
+            - network
+            - organization_id
+            - project_id
+            - service_instance_id
+            type: object
+          status:
+            nullable: true
+            properties:
+              attachments:
+                items:
+                  properties:
+                    ports:
+                      items:
+                        properties:
+                          container_port:
+                            format: uint16
+                            maximum: 65535.0
+                            minimum: 0.0
+                            type: integer
+                          name:
+                            type: string
+                          protocol:
+                            enum:
+                            - tcp
+                            - udp
+                            type: string
+                        required:
+                        - container_port
+                        - name
+                        - protocol
+                        type: object
+                      type: array
+                    private_dns:
+                      type: string
+                    private_ip:
+                      nullable: true
+                      type: string
+                    security_groups:
+                      items:
+                        type: string
+                      type: array
+                    service_instance_id:
+                      format: uuid
+                      type: string
+                  required:
+                  - ports
+                  - private_dns
+                  - security_groups
+                  - service_instance_id
+                  type: object
+                type: array
+              dns_suffix:
+                type: string
+              message:
+                type: string
+              nat_enabled:
+                type: boolean
+              nat_gateway_node:
+                nullable: true
+                type: string
+              observed_generation:
+                format: int64
+                type: integer
+              phase:
+                type: string
+            required:
+            - attachments
+            - dns_suffix
+            - message
+            - nat_enabled
+            - observed_generation
+            - phase
+            type: object
+        required:
+        - spec
+        title: VpcNetwork
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

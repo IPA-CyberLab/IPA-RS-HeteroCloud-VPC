@@ -1,0 +1,47 @@
+{{- if .Values.guard.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: heterocloud-vpc-nat-guard}
+spec:
+  selector:
+    matchLabels: {app: heterocloud-vpc, component: nat-guard}
+  updateStrategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1}}
+  template:
+    metadata:
+      labels: {app: heterocloud-vpc, component: nat-guard}
+    spec:
+      serviceAccountName: heterocloud-vpc-guard
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      affinity:
+        nodeAffinity: {{ .Values.nodeAffinity | toJson }}
+      tolerations: {{ .Values.tolerations | toJson }}
+      containers:
+        - name: guard
+          image: {{ .Values.image | quote }}
+          command: [/usr/local/bin/vpc-nat-guard]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+            seccompProfile: {type: RuntimeDefault}
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - name: NODE_IP
+              valueFrom: {fieldRef: {fieldPath: status.hostIP}}
+            - {name: FLASH_NAMESPACE, value: {{ .Values.flashNamespace | quote }}}
+            - {name: IPTABLES_BIN, value: {{ .Values.guard.iptablesBin | quote }}}
+            - {name: VPC_PROTECTED_CIDRS, value: {{ join "," .Values.protectedCidrs | quote }}}
+          volumeMounts:
+            - {name: xtables-lock, mountPath: /run/xtables.lock}
+          ports: [{name: health, containerPort: 18083}]
+          readinessProbe: {httpGet: {path: /health, port: health}, periodSeconds: 5, failureThreshold: 2}
+          resources: {{ .Values.guard.resources | toJson }}
+      volumes:
+        - name: xtables-lock
+          hostPath: {path: /run/xtables.lock, type: FileOrCreate}
+{{- end }}
