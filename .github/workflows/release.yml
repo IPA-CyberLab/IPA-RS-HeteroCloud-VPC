@@ -21,6 +21,25 @@ jobs:
       - uses: azure/setup-helm@v5
       - run: helm lint --strict deploy/helm/heterocloud-vpc
       - run: helm template heterocloud-vpc deploy/helm/heterocloud-vpc --include-crds > /tmp/vpc-chart.yaml
+      - run: helm lint deploy/helm/egressgateway
+      - name: Verify cert-manager documents
+        run: |
+          helm template egressgateway deploy/helm/egressgateway --set controller.tls.method=certmanager --set controller.tls.certmanager.issuerName=test-ca > /tmp/egress-chart.yaml
+          python3 -m pip install 'PyYAML==6.0.3'
+          python3 - <<'PY'
+          import yaml
+          docs = list(yaml.safe_load_all(open('/tmp/egress-chart.yaml')))
+          cert = [d for d in docs if d and d.get('kind') == 'Certificate']
+          assert len(cert) == 1 and 'webhooks' not in cert[0]
+          assert sum(d.get('kind') == 'MutatingWebhookConfiguration' for d in docs if d) == 1
+          PY
+      - name: Real kernel guard fail-closed test
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y iptables ipset iproute2 iputils-ping
+          cargo test --locked --bin vpc-nat-guard --no-run --message-format=json > /tmp/guard-tests.jsonl
+          TEST_BIN=$(python3 -c 'import json; print(next(x["executable"] for x in map(json.loads,open("/tmp/guard-tests.jsonl")) if x.get("reason")=="compiler-artifact" and x.get("executable") and x.get("profile",{}).get("test")))')
+          sudo env VPC_GUARD_KERNEL_TEST=1 unshare --net --mount --propagation private "$TEST_BIN" --ignored --nocapture
   image:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify

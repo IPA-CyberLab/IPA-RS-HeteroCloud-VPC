@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.global.configName }}
+  namespace: {{ .Release.Namespace }}
+  {{- if .Values.global.commonLabels }}
+  labels:
+    {{- include "tplvalues.render" ( dict "value" .Values.global.commonLabels "context" $ ) | nindent 4 }}
+  {{- end }}
+  {{- if .Values.global.commonAnnotations }}
+  annotations:
+    {{- include "tplvalues.render" ( dict "value" .Values.global.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+data:
+  conf.yml: |-
+    {{- include "tplvalues.render" ( dict "value" .Values.feature "context" $) | nindent 4 }}

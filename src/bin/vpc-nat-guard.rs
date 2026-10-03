@@ -1,4 +1,7 @@
 //! Node-local fail-closed guard. Tenant workloads never receive host privileges.
+#[cfg(all(test, target_os = "linux"))]
+#[path = "guard_tests/mod.rs"]
+mod kernel_tests;
 use anyhow::{Context, Result, ensure};
 use axum::{
     Router,

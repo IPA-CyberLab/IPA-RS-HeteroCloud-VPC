@@ -1,0 +1,193 @@
+apiVersion: {{ include "capabilities.deployment.apiVersion" . }}
+kind: Deployment
+metadata:
+  name: {{ .Values.controller.name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "project.egressgatewayController.labels" . | nindent 4 }}
+      {{- if .Values.global.commonLabels }}
+      {{- include "tplvalues.render" ( dict "value" .Values.global.commonLabels "context" $ ) | nindent 4 }}
+      {{- end }}
+  {{- if .Values.global.commonAnnotations }}
+  annotations:
+    {{- include "tplvalues.render" ( dict "value" .Values.global.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      {{- include "project.egressgatewayController.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- if or .Values.controller.podAnnotations .Values.global.commonAnnotations }}
+      annotations:
+        {{- if .Values.global.commonAnnotations }}
+        {{- include "tplvalues.render" ( dict "value" .Values.global.commonAnnotations "context" $ ) | nindent 8 }}
+        {{- end }}
+        {{- if .Values.controller.podAnnotations }}
+        {{- include "tplvalues.render" ( dict "value" .Values.controller.podAnnotations "context" $ ) | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      labels:
+        {{- include "project.egressgatewayController.selectorLabels" . | nindent 8 }}
+        {{- if .Values.global.commonLabels }}
+        {{- include "tplvalues.render" ( dict "value" .Values.global.commonLabels "context" $ ) | nindent 8 }}
+        {{- end }}
+        {{- if .Values.controller.podLabels }}
+        {{- include "tplvalues.render" ( dict "value" .Values.controller.podLabels "context" $ ) | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if .Values.controller.image.imagePullSecrets }}
+      imagePullSecrets:
+      {{- with .Values.controller.image.imagePullSecrets }}
+      {{- toYaml . | trim | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      serviceAccountName: {{ .Values.controller.name | trunc 63 | trimSuffix "-" }}
+      priorityClassName: {{ default "system-node-critical" .Values.controller.priorityClassName }}
+      {{- if .Values.controller.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- else }}
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      {{- end }}
+      restartPolicy: Always
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controller.affinity }}
+      affinity:
+      {{- include "tplvalues.render" (dict "value" .Values.controller.affinity "context" $) | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Values.controller.name | trunc 63 | trimSuffix "-" }}
+          image: {{ include "project.egressgatewayController.image" . | quote }}
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          command:
+            - {{ .Values.controller.cmdBinName }}
+          {{- with .Values.controller.extraArgs }}
+          {{- toYaml . | trim | nindent 8 }}
+          {{- end }}
+          ports:
+          {{- if .Values.controller.prometheus.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.controller.prometheus.port }}
+              protocol: TCP
+          {{- end }}
+            - name: http
+              containerPort: {{ .Values.controller.healthServer.port }}
+              protocol: TCP
+            - name: webhook
+              containerPort: {{ .Values.controller.webhookPort }}
+              protocol: TCP
+          {{- if semverCompare ">=1.20-0" .Capabilities.KubeVersion.Version }}
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: {{ .Values.controller.healthServer.port }}
+              scheme: HTTP
+            failureThreshold: {{ .Values.controller.healthServer.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.controller.healthServer.startupProbe.periodSeconds }}
+            successThreshold: 1
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.controller.healthServer.port }}
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: {{ .Values.controller.healthServer.livenessProbe.periodSeconds }}
+            successThreshold: 1
+            failureThreshold: {{ .Values.controller.healthServer.livenessProbe.failureThreshold }}
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: {{ .Values.controller.healthServer.port }}
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: {{ .Values.controller.healthServer.readinessProbe.periodSeconds }}
+            successThreshold: 1
+            failureThreshold: {{ .Values.controller.healthServer.readinessProbe.failureThreshold }}
+            timeoutSeconds: 5
+          {{- with .Values.controller.resources }}
+          resources:
+          {{- toYaml . | trim | nindent 12 }}
+          {{- end }}
+          env:
+            - name: LEADER_ELECTION
+              value: "true"
+            - name: LOG_LEVEL
+              value: {{ .Values.controller.debug.logLevel | quote }}
+            - name: LOG_USE_DEV_MODE
+              value: {{ .Values.controller.debug.logUseDevMode | quote }}
+            - name: LOG_WITH_CALLER
+              value: {{ .Values.controller.debug.logWithCaller | quote }}
+            - name: LOG_ENCODER
+              value: {{ .Values.controller.debug.logEncoder | quote }}
+            {{ if .Values.controller.prometheus.enabled }}
+            - name: METRICS_BIND_ADDRESS
+              value: :{{ .Values.controller.prometheus.port }}
+            {{ end }}
+            - name: GOPS_PORT
+              value: {{ .Values.controller.debug.gopsPort | quote }}
+            - name: PYROSCOPE_SERVER_ADDR
+              value: {{ .Values.controller.debug.pyroscopeServerAddr | quote }}
+            - name: WEBHOOK_PORT
+              value: {{ .Values.controller.webhookPort | quote }}
+            - name: HEALTH_PROBE_BIND_ADDRESS
+              value: :{{ .Values.controller.healthServer.port }}
+            - name: CONFIGMAP_PATH
+              value: "/tmp/config-map/conf.yml"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- with .Values.controller.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.controller.securityContext }}
+          securityContext:
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+          volumeMounts:
+            - name: config-path
+              mountPath: /tmp/config-map
+              readOnly: true
+            - name: tls
+              mountPath: /etc/tls
+              readOnly: true
+            {{- if .Values.controller.extraVolumes }}
+            {{- include "tplvalues.render" ( dict "value" .Values.controller.extraVolumeMounts "context" $ ) | nindent 12 }}
+            {{- end }}
+      volumes:
+        # To read the configuration from the config map
+        - name: config-path
+          configMap:
+            name: {{ .Values.global.configName }}
+        - name: tls
+          projected:
+            defaultMode: 0400
+            sources:
+              - secret:
+                  name: {{ .Values.controller.tls.secretName | trunc 63 | trimSuffix "-" }}
+                  items:
+                    - key: tls.crt
+                      path: tls.crt
+                    - key: tls.key
+                      path: tls.key
+                    - key: ca.crt
+                      path: ca.crt
+      {{- if .Values.controller.extraVolumeMounts }}
+      {{- include "tplvalues.render" ( dict "value" .Values.controller.extraVolumeMounts "context" $ ) | nindent 6 }}
+      {{- end }}

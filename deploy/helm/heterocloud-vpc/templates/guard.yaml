@@ -26,7 +26,7 @@ spec:
             runAsNonRoot: false
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+            capabilities: {drop: [ALL], add: [NET_ADMIN, NET_RAW]}
             seccompProfile: {type: RuntimeDefault}
           env:
             - name: NODE_NAME

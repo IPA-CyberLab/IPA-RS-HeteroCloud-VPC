@@ -1,0 +1,83 @@
+{{- if .Values.agent.prometheus.serviceMonitor.install -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.agent.name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ default .Release.Namespace .Values.agent.prometheus.serviceMonitor.namespace }}
+  labels:
+    {{- include "project.egressgatewayAgent.labels" . | nindent 4 }}
+    {{- if .Values.global.commonLabels }}
+    {{- include "tplvalues.render" ( dict "value" .Values.global.commonLabels "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.agent.prometheus.serviceMonitor.labels }}
+    {{- include "tplvalues.render" ( dict "value" .Values.agent.prometheus.serviceMonitor.labels "context" $ ) | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.global.commonAnnotations .Values.agent.prometheus.serviceMonitor.annotations }}
+  annotations:
+    {{- if .Values.global.commonAnnotations }}
+    {{- include "tplvalues.render" ( dict "value" .Values.global.commonAnnotations "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.agent.prometheus.serviceMonitor.annotations }}
+    {{- include "tplvalues.render" ( dict "value" .Values.agent.prometheus.serviceMonitor.annotations "context" $ ) | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  endpoints:
+    - interval: 30s
+      path: /metrics
+      port: metrics
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace | quote }}
+  selector:
+    matchLabels:
+      {{- include "project.egressgatewayAgent.selectorLabels" . | nindent 6 }}
+      {{- if .Values.global.commonLabels }}
+      {{- include "tplvalues.render" ( dict "value" .Values.global.commonLabels "context" $ ) | nindent 6 }}
+      {{- end }}
+      {{- if .Values.agent.podLabels }}
+      {{- include "tplvalues.render" ( dict "value" .Values.agent.podLabels "context" $ ) | nindent 6 }}
+      {{- end }}
+  {{- end }}
+---
+{{- if .Values.controller.prometheus.serviceMonitor.install -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.controller.name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ default .Release.Namespace .Values.controller.prometheus.serviceMonitor.namespace }}
+  labels:
+    {{- include "project.egressgatewayController.labels" . | nindent 4 }}
+    {{- if .Values.global.commonLabels }}
+    {{- include "tplvalues.render" ( dict "value" .Values.global.commonLabels "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.controller.prometheus.serviceMonitor.labels }}
+    {{- include "tplvalues.render" ( dict "value" .Values.controller.prometheus.serviceMonitor.labels "context" $ ) | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.global.commonAnnotations .Values.controller.prometheus.serviceMonitor.annotations }}
+  annotations:
+    {{- if .Values.global.commonAnnotations }}
+    {{- include "tplvalues.render" ( dict "value" .Values.global.commonAnnotations "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.controller.prometheus.serviceMonitor.annotations }}
+    {{- include "tplvalues.render" ( dict "value" .Values.controller.prometheus.serviceMonitor.annotations "context" $ ) | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  endpoints:
+    - interval: 30s
+      path: /metrics
+      port: metrics
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace | quote }}
+  selector:
+    matchLabels:
+      {{- include "project.egressgatewayController.selectorLabels" . | nindent 6 }}
+      {{- if .Values.global.commonLabels }}
+      {{- include "tplvalues.render" ( dict "value" .Values.global.commonLabels "context" $ ) | nindent 6 }}
+      {{- end }}
+      {{- if .Values.controller.podLabels }}
+      {{- include "tplvalues.render" ( dict "value" .Values.controller.podLabels "context" $ ) | nindent 6 }}
+      {{- end }}
+{{- end }}
