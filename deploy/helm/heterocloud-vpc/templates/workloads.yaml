@@ -75,4 +75,7 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: {{ .Values.controlPlaneNamespace | quote }}}
           podSelector:
             matchLabels: {app.kubernetes.io/name: heterocloud}
+        {{- range .Values.controlPlaneCidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
       ports: [{port: 8080, protocol: TCP}]

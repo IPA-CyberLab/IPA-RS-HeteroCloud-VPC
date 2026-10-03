@@ -1,5 +1,7 @@
-image: ghcr.io/ipa-cyberlab/ipa-rs-heterocloud-vpc:0.1.0
+image: ghcr.io/ipa-cyberlab/ipa-rs-heterocloud-vpc:0.1.1
 controlPlaneNamespace: heterocloud
+# Host-networked control planes are seen as node addresses by NetworkPolicy.
+controlPlaneCidrs: []
 flashNamespace: heterocloud-flash-workloads
 clusterDomain: cluster.local
 providerIssuer: heterocloud
