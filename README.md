@@ -6,6 +6,7 @@ Flashサービスをプライベートネットワークに接続するHeteroClo
 - VPC内の新しい接続は既定で拒否します。接続元・接続先のサービスまたはセキュリティグループと、TCP / UDPポートを指定して許可します。応答通信はステートフルに許可します。
 - 内部DNSは `名前.hc-vpc-<VPC UUIDのハイフンを除いた値>.svc.<clusterDomain>`。宛先ポートはコンテナポートです。内部向けのサービスは公開DNS・ロードバランサー・NodePortを作成しません。
 - NATは既定で無効です。有効にするとFlashの送信許可・拒否CIDRを適用して公開IPv4宛先へ接続できます。VPC内の通信ルールとは独立しています。
+- VPCに接続したまま、選んだFlashだけを外部公開できます。受信はFlashの `exposure.type: public`、外向き通信はVPCのNATで別々に設定します。[API / CLIの公開設定例](https://github.com/IPA-CyberLab/IPA-RS-HeteroCloud/blob/master/docs/networking/vpc.md#選んだサービスをインターネットへ公開する)を参照してください。
 - 利用中のVPCやセキュリティグループは削除できません。内部DNS名はVPC内で一意です。
 
 ## 作成
