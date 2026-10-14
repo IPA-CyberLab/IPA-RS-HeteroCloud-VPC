@@ -5,7 +5,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN cargo build --release --locked --bins
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables ipset && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /src/Cargo.lock /usr/share/heterocloud/Cargo.lock
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates iptables ipset && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /src/target/release/vpc-api /usr/local/bin/vpc-api
 COPY --from=builder /src/target/release/vpc-controller /usr/local/bin/vpc-controller
 COPY --from=builder /src/target/release/vpc-nat-guard /usr/local/bin/vpc-nat-guard
