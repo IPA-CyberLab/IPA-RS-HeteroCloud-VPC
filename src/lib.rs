@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod controller;
 pub mod domain;
+pub mod leader;
 pub mod resources;
 use kube::{
     CustomResource,

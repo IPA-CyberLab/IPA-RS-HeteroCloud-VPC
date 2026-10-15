@@ -40,6 +40,24 @@ jobs:
           cargo test --locked --bin vpc-nat-guard --no-run --message-format=json > /tmp/guard-tests.jsonl
           TEST_BIN=$(python3 -c 'import json; print(next(x["executable"] for x in map(json.loads,open("/tmp/guard-tests.jsonl")) if x.get("reason")=="compiler-artifact" and x.get("executable") and x.get("profile",{}).get("test")))')
           sudo env VPC_GUARD_KERNEL_TEST=1 unshare --net --mount --propagation private "$TEST_BIN" --ignored --nocapture
+      - name: Verify lease exclusivity and crash failover against a real Kubernetes API
+        env:
+          KUBECONFIG: ${{ runner.temp }}/vpc-election.kubeconfig
+          VPC_LEASE_E2E: '1'
+        run: |
+          python3 - <<'PY'
+          import hashlib,os,pathlib,urllib.request
+          with urllib.request.urlopen('https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64',timeout=90) as response:data=response.read()
+          assert hashlib.sha256(data).hexdigest()=='aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d'
+          binary=pathlib.Path(os.environ['RUNNER_TEMP'])/'kind';binary.write_bytes(data);binary.chmod(0o755)
+          PY
+          "$RUNNER_TEMP/kind" create cluster --name vpc-lease-e2e --wait 120s \
+            --image kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+          chmod 0600 "$KUBECONFIG"
+          cargo test --locked --lib real_lease_prevents_overlap_and_recovers_from_leader_crash -- --ignored --nocapture
+      - name: Remove the isolated election test cluster
+        if: always()
+        run: if test -x "$RUNNER_TEMP/kind"; then "$RUNNER_TEMP/kind" delete cluster --name vpc-lease-e2e; fi
   image:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify

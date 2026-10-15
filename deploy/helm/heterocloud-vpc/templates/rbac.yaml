@@ -7,6 +7,27 @@ metadata:
 ---
 {{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: heterocloud-vpc-election, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [heterocloud-vpc-controller]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: heterocloud-vpc-election, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: heterocloud-vpc-election}
+subjects:
+  - kind: ServiceAccount
+    name: heterocloud-vpc-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata: {name: heterocloud-vpc-api}
 rules:

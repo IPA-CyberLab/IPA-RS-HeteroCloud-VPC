@@ -8,6 +8,7 @@ providerIssuer: heterocloud
 # Verification keys only; provider signing keys never enter this service.
 providerPublicKeysJson: "{}"
 apiReplicas: 2
+controllerReplicas: 2
 protectedCidrs: []
 gatewaySelector:
   matchLabels:

@@ -4,10 +4,8 @@ kind: Deployment
 metadata:
   name: heterocloud-vpc-{{ $component }}
 spec:
-  replicas: {{ if eq $component "api" }}{{ $.Values.apiReplicas }}{{ else }}1{{ end }}
-  {{- if eq $component "controller" }}
-  strategy: {type: Recreate}
-  {{- end }}
+  replicas: {{ if eq $component "api" }}{{ $.Values.apiReplicas }}{{ else }}{{ $.Values.controllerReplicas }}{{ end }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
   selector:
     matchLabels: {app: heterocloud-vpc, component: {{ $component }}}
   template:
@@ -31,6 +29,10 @@ spec:
           image: {{ $.Values.image | quote }}
           command: ["/usr/local/bin/vpc-{{ $component }}"]
           env:
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: POD_UID
+              valueFrom: {fieldRef: {fieldPath: metadata.uid}}
             - {name: FLASH_NAMESPACE, value: {{ $.Values.flashNamespace | quote }}}
             - {name: CLUSTER_DOMAIN, value: {{ $.Values.clusterDomain | quote }}}
             - {name: HETEROCLOUD_PROVIDER_ISSUER, value: {{ $.Values.providerIssuer | quote }}}
@@ -44,6 +46,9 @@ spec:
           livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10}
           resources: {{ $.Values.apiResources | toJson }}
           {{- else }}
+          ports: [{name: health, containerPort: 8082}]
+          readinessProbe: {httpGet: {path: /health/ready, port: health}, periodSeconds: 2}
+          livenessProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 10}
           resources: {{ $.Values.controllerResources | toJson }}
           {{- end }}
 ---
