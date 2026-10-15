@@ -5,7 +5,12 @@ metadata:
   name: heterocloud-vpc-{{ $component }}
 spec:
   replicas: {{ if eq $component "api" }}{{ $.Values.apiReplicas }}{{ else }}{{ $.Values.controllerReplicas }}{{ end }}
+  {{- if and (eq $component "controller") (eq $.Values.controllerUpdateStrategy "Recreate") }}
+  # Used only for the initial transition from a controller without election.
+  strategy: {type: Recreate}
+  {{- else }}
   strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  {{- end }}
   selector:
     matchLabels: {app: heterocloud-vpc, component: {{ $component }}}
   template:

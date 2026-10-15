@@ -9,6 +9,7 @@ providerIssuer: heterocloud
 providerPublicKeysJson: "{}"
 apiReplicas: 2
 controllerReplicas: 2
+controllerUpdateStrategy: RollingUpdate
 protectedCidrs: []
 gatewaySelector:
   matchLabels:
